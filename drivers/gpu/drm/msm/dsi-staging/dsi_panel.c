@@ -4770,10 +4770,14 @@ int dsi_panel_set_lp1(struct dsi_panel *panel)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP1);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP1 cmd, rc=%d\n",
 		       panel->name, rc);
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4792,10 +4796,14 @@ int dsi_panel_set_lp2(struct dsi_panel *panel)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
+
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_LP2);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_LP2 cmd, rc=%d\n",
 		       panel->name, rc);
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -4814,14 +4822,16 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 		return 0;
 
 	mutex_lock(&panel->panel_lock);
+	if (!panel->panel_initialized)
+		goto exit;
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_NOLP);
 	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_NOLP cmd, rc=%d\n",
-				panel->name, rc);
-
 	panel->fod_hbm_enabled = false;
 	panel->in_aod = false;
+    panel->name, rc);
+exit:
 	mutex_unlock(&panel->panel_lock);
 	return rc;
 }
@@ -5621,14 +5631,13 @@ int dsi_panel_enable(struct dsi_panel *panel)
 	tf8719_on_cmd_add_60ms_delay(panel, DSI_CMD_SET_ON);
 
 	rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_SET_ON);
-	if (rc) {
+	if (rc)
 		pr_err("[%s] failed to send DSI_CMD_SET_ON cmds, rc=%d\n",
 		       panel->name, rc);
-	}
+	else
 	panel->panel_initialized = true;
 	panel->fod_hbm_enabled = false;
 	panel->in_aod = false;
-
 	mutex_unlock(&panel->panel_lock);
 	pr_info("[LCD] %s: DSI_CMD_SET_ON\n", __func__);
 
