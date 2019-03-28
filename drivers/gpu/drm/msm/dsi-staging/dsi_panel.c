@@ -3957,6 +3957,7 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 				int topology_override,
 				enum dsi_panel_type type)
 {
+	const char *panel_physical_type;
 	struct dsi_panel *panel;
 	int rc = 0;
 
@@ -3974,6 +3975,16 @@ struct dsi_panel *dsi_panel_get(struct device *parent,
 	panel->on_cmds_tuning = of_property_read_bool(of_node,
 				"qcom,mdss-dsi-on-command-tuning");
 	pr_info("[LCD]%s: on_cmds_tuning = %d.\n", __func__, panel->on_cmds_tuning);
+		/*
+		 * Set panel type to LCD as default.
+		 */
+		panel->panel_type = DSI_DISPLAY_PANEL_TYPE_LCD;
+		panel_physical_type =
+			of_get_property(of_node,
+					"qcom,mdss-dsi-panel-physical-type",
+					NULL);
+		if (panel_physical_type && !strcmp(panel_physical_type, "oled"))
+			panel->panel_type = DSI_DISPLAY_PANEL_TYPE_OLED;
 
 		rc = dsi_panel_parse_host_config(panel, of_node);
 		if (rc) {
