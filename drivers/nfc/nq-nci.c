@@ -32,9 +32,7 @@ struct nqx_platform_data {
 	unsigned int clkreq_gpio;
 	unsigned int firm_gpio;
 	unsigned int ese_gpio;
-#ifdef CLK_SRC_PLL
 	const char *clk_src_name;
-#endif
 	/* NFC_CLK pin voting state */
 	bool clk_pin_voting;
 };
@@ -46,19 +44,10 @@ static const struct of_device_id msm_match_table[] = {
 
 MODULE_DEVICE_TABLE(of, msm_match_table);
 
-#define MAX_BUFFER_SIZE			(320)
-#define WAKEUP_SRC_TIMEOUT		(2000)
-#define MAX_RETRY_COUNT			3
-#define NCI_RESET_CMD_LEN		4
-#define NCI_RESET_RSP_LEN		4
-#define NCI_RESET_NTF_LEN		13
-#define NCI_GET_VERSION_CMD_LEN		8
-#define NCI_GET_VERSION_RSP_LEN		12
-#define MAX_IRQ_WAIT_TIME		(90)	//in ms
-
 static struct wake_lock fieldon_wl;
 struct nqx_dev {
 	wait_queue_head_t	read_wq;
+	wait_queue_head_t	cold_reset_read_wq;
 	struct	mutex		read_mutex;
 	struct	mutex		dev_ref_mutex;
 	struct	i2c_client	*client;
@@ -72,21 +61,23 @@ struct nqx_dev {
 	unsigned int		ese_gpio;
 	/* NFC VEN pin state powered by Nfc */
 	bool			nfc_ven_enabled;
+	/* NFC state reflected from MW */
+	bool			nfc_enabled;
 	/* NFC_IRQ state */
 	bool			irq_enabled;
 	/* NFC_IRQ wake-up state */
 	bool			irq_wake_up;
+	bool			cold_reset_rsp_pending;
+	uint8_t			cold_reset_status;
 	spinlock_t		irq_enabled_lock;
 	unsigned int		count_irq;
 	/* NFC_IRQ Count */
 	unsigned int		dev_ref_count;
 	/* Initial CORE RESET notification */
 	unsigned int		core_reset_ntf;
-#ifdef CLK_SRC_PLL
 	/* CLK control */
 	bool			clk_run;
 	struct	clk		*s_clk;
-#endif
 	/* read buffer*/
 	size_t kbuflen;
 	u8 *kbuf;
@@ -95,12 +86,13 @@ struct nqx_dev {
 
 static int nfcc_reboot(struct notifier_block *notifier, unsigned long val,
 			void *v);
-#ifdef CLK_SRC_PLL
 /*clock enable function*/
 static int nqx_clock_select(struct nqx_dev *nqx_dev);
 /*clock disable function*/
 static int nqx_clock_deselect(struct nqx_dev *nqx_dev);
-#endif
+static int nqx_standby_write(struct nqx_dev *nqx_dev,
+				const unsigned char *buf, size_t len);
+
 static struct notifier_block nfcc_notifier = {
 	.notifier_call	= nfcc_reboot,
 	.next			= NULL,
@@ -174,6 +166,81 @@ static int is_data_available_for_read(struct nqx_dev *nqx_dev)
 	return ret;
 }
 
+static int send_cold_reset_cmd(struct nqx_dev *nqx_dev)
+{
+	int ret;
+	char *cold_reset_cmd = NULL;
+
+	if (gpio_get_value(nqx_dev->firm_gpio)) {
+		dev_err(&nqx_dev->client->dev, "FW download in-progress\n");
+		return -EBUSY;
+	}
+	if (!gpio_get_value(nqx_dev->en_gpio)) {
+		dev_err(&nqx_dev->client->dev, "VEN LOW - NFCC powered off\n");
+		return -ENODEV;
+	}
+	cold_reset_cmd = kzalloc(COLD_RESET_CMD_LEN, GFP_DMA | GFP_KERNEL);
+	if (!cold_reset_cmd)
+		return -ENOMEM;
+
+	cold_reset_cmd[0] = COLD_RESET_CMD_GID;
+	cold_reset_cmd[1] = COLD_RESET_OID;
+	cold_reset_cmd[2] = COLD_RESET_CMD_PAYLOAD_LEN;
+
+	ret = nqx_standby_write(nqx_dev, cold_reset_cmd, COLD_RESET_CMD_LEN);
+	if (ret < 0) {
+		dev_err(&nqx_dev->client->dev,
+			"%s: write failed after max retry\n", __func__);
+	}
+	kfree(cold_reset_cmd);
+	return ret;
+}
+
+static void read_cold_reset_rsp(struct nqx_dev *nqx_dev, bool isNfcEnabled,
+				char *header)
+{
+	int ret = -1;
+	char *cold_reset_rsp = NULL;
+
+	cold_reset_rsp = kzalloc(COLD_RESET_RSP_LEN, GFP_DMA | GFP_KERNEL);
+	if (!cold_reset_rsp)
+		return;
+
+	/*
+	 * read header also if NFC is disabled
+	 * for enable case, will be taken care by nfc_read thread
+	 */
+	if (!isNfcEnabled) {
+		ret = i2c_master_recv(nqx_dev->client, cold_reset_rsp,
+					NCI_HEADER_LEN);
+		if (ret != NCI_HEADER_LEN) {
+			dev_err(&nqx_dev->client->dev,
+				"%s: failure to read cold reset rsp header\n",
+				__func__);
+			goto error;
+		}
+	} else {
+		memcpy(cold_reset_rsp, header, NCI_HEADER_LEN);
+	}
+
+	if ((NCI_HEADER_LEN + cold_reset_rsp[2]) > COLD_RESET_RSP_LEN) {
+		dev_err(&nqx_dev->client->dev,
+			"%s: - invalid response for cold_reset\n", __func__);
+		ret = -EINVAL;
+		goto error;
+	}
+	ret = i2c_master_recv(nqx_dev->client, &cold_reset_rsp[NCI_PAYLOAD_IDX],
+				cold_reset_rsp[2]);
+	if (ret != cold_reset_rsp[2]) {
+		dev_err(&nqx_dev->client->dev,
+			"%s: failure to read cold reset rsp status\n",
+			__func__);
+		goto error;
+	}
+	nqx_dev->cold_reset_status = cold_reset_rsp[NCI_PAYLOAD_IDX];
+error:
+	kfree(cold_reset_rsp);
+}
 
 static ssize_t nfc_read(struct file *filp, char __user *buf,
 					size_t count, loff_t *offset)
@@ -249,8 +316,23 @@ static ssize_t nfc_read(struct file *filp, char __user *buf,
 		goto err;
 	}
 
-	if (((tmp[0] & 0xff) == 0x61) && ((tmp[1] & 0xff) == 0x07) && ((tmp[2] & 0xff) == 0x01)) {
-		wake_lock_timeout(&fieldon_wl, msecs_to_jiffies(3*1000));
+	/* check if it's response of cold reset command
+	 * NFC HAL process shouldn't receive this data as
+	 * command was sent by eSE HAL
+	 */
+	if (nqx_dev->cold_reset_rsp_pending
+		&& (tmp[0] == COLD_RESET_RSP_GID)
+		&& (tmp[1] == COLD_RESET_OID)) {
+		read_cold_reset_rsp(nqx_dev, true, tmp);
+		nqx_dev->cold_reset_rsp_pending = false;
+		wake_up_interruptible(&nqx_dev->cold_reset_read_wq);
+		mutex_unlock(&nqx_dev->read_mutex);
+		/*
+		 * NFC process doesn't know about cold reset command
+		 * being sent as it was initiated by eSE process
+		 * we shouldn't return any data to NFC process
+		 */
+		return 0;
 	}
 #ifdef NFC_KERNEL_BU
 		dev_dbg(&nqx_dev->client->dev, "%s : NfcNciRx %x %x %x\n",
@@ -356,7 +438,7 @@ static int sn100_ese_pwr(struct nqx_dev *nqx_dev, unsigned long arg)
 {
 	int r = -1;
 
-	if (arg == 0) {
+	if (arg == ESE_POWER_ON) {
 		/**
 		 * Let's store the NFC VEN pin state
 		 * will check stored value in case of eSE power off request,
@@ -375,7 +457,7 @@ static int sn100_ese_pwr(struct nqx_dev *nqx_dev, unsigned long arg)
 			dev_dbg(&nqx_dev->client->dev, "en_gpio already HIGH\n");
 		}
 		r = 0;
-	} else if (arg == 1) {
+	} else if (arg == ESE_POWER_OFF) {
 		if (!nqx_dev->nfc_ven_enabled) {
 			dev_dbg(&nqx_dev->client->dev, "NFC not enabled, disabling en_gpio\n");
 			gpio_set_value(nqx_dev->en_gpio, 0);
@@ -385,7 +467,40 @@ static int sn100_ese_pwr(struct nqx_dev *nqx_dev, unsigned long arg)
 			dev_dbg(&nqx_dev->client->dev, "keep en_gpio high as NFC is enabled\n");
 		}
 		r = 0;
-	} else if (arg == 3) {
+	} else if (arg == ESE_COLD_RESET) {
+		// set default value for status as failure
+		nqx_dev->cold_reset_status = EIO;
+
+		r = send_cold_reset_cmd(nqx_dev);
+		if (r <= 0) {
+			dev_err(&nqx_dev->client->dev,
+				"failed to send cold reset command\n");
+			return nqx_dev->cold_reset_status;
+		}
+		nqx_dev->cold_reset_rsp_pending = true;
+		// check if NFC is enabled
+		if (nqx_dev->nfc_enabled) {
+			/*
+			 * nfc_read thread will initiate cold reset response
+			 * and it will signal for data available
+			 */
+			wait_event_interruptible(nqx_dev->cold_reset_read_wq,
+				!nqx_dev->cold_reset_rsp_pending);
+		} else {
+			/*
+			 * Read data as NFC thread is not active
+			 */
+			r = is_data_available_for_read(nqx_dev);
+			if (r <= 0) {
+				nqx_disable_irq(nqx_dev);
+				nqx_dev->cold_reset_rsp_pending = false;
+				return nqx_dev->cold_reset_status;
+			}
+			read_cold_reset_rsp(nqx_dev, false, NULL);
+			nqx_dev->cold_reset_rsp_pending = false;
+		}
+		r = nqx_dev->cold_reset_status;
+	} else if (arg == ESE_POWER_STATE) {
 		// eSE power state
 		r = gpio_get_value(nqx_dev->en_gpio);
 	}
@@ -575,7 +690,7 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 	int r = 0;
 	struct nqx_dev *nqx_dev = filp->private_data;
 
-	if (arg == 0) {
+	if (arg == NFC_POWER_OFF) {
 		/*
 		 * We are attempting a hardware reset so let us disable
 		 * interrupts to avoid spurious notifications to upper
@@ -604,15 +719,13 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 			usleep_range(10000, 10100);
 		}
 		if (nqx_dev->pdata->clk_pin_voting) {
-#ifdef CLK_SRC_PLL
 			r = nqx_clock_deselect(nqx_dev);
 			if (r < 0)
 				dev_err(&nqx_dev->client->dev, "unable to disable clock\n");
-#endif
 		}
 
 		nqx_dev->nfc_ven_enabled = false;
-	} else if (arg == 1) {
+	} else if (arg == NFC_POWER_ON) {
 		nqx_enable_irq(nqx_dev);
 		dev_dbg(&nqx_dev->client->dev,
 			"gpio_set_value enable: %s: info: %p\n",
@@ -624,14 +737,12 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 		gpio_set_value(nqx_dev->en_gpio, 1);
 		usleep_range(10000, 10100);
 		if (nqx_dev->pdata->clk_pin_voting) {
-#ifdef CLK_SRC_PLL
 			r = nqx_clock_select(nqx_dev);
 			if (r < 0)
 				dev_err(&nqx_dev->client->dev, "unable to enable clock\n");
-#endif
 		}
 		nqx_dev->nfc_ven_enabled = true;
-	} else if (arg == 2) {
+	} else if (arg == NFC_FW_DWL_VEN_TOGGLE) {
 		/*
 		 * We are switching to Dowload Mode, toggle the enable pin
 		 * in order to set the NFCC in the new mode
@@ -653,7 +764,7 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 		usleep_range(10000, 10100);
 		gpio_set_value(nqx_dev->en_gpio, 1);
 		usleep_range(10000, 10100);
-	} else if (arg == 4) {
+	} else if (arg == NFC_FW_DWL_HIGH) {
 		/*
 		 * Setting firmware download gpio to HIGH for SN100U
 		 * before FW download start
@@ -666,7 +777,7 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 			dev_err(&nqx_dev->client->dev,
 				"firm_gpio is invalid\n");
 		}
-	} else if (arg == 6) {
+	} else if (arg == NFC_FW_DWL_LOW) {
 		/*
 		 * Setting firmware download gpio to LOW for SN100U
 		 * FW download finished
@@ -679,6 +790,16 @@ int nfc_ioctl_power_states(struct file *filp, unsigned long arg)
 			dev_err(&nqx_dev->client->dev,
 				"firm_gpio is invalid\n");
 		}
+	} else if (arg == NFC_ENABLE) {
+		/*
+		 * Setting flag true when NFC is enabled
+		 */
+		nqx_dev->nfc_enabled = true;
+	} else if (arg == NFC_DISABLE) {
+		/*
+		 * Setting flag false when NFC is disabled
+		 */
+		nqx_dev->nfc_enabled = false;
 	} else {
 		r = -ENOIOCTLCMD;
 	}
@@ -984,7 +1105,6 @@ err_nfcc_hw_check:
 	return -ENXIO;
 }
 
-#ifdef CLK_SRC_PLL
 /*
  * Routine to enable clock.
  * this routine can be extended to select from multiple
@@ -1030,7 +1150,6 @@ static int nqx_clock_deselect(struct nqx_dev *nqx_dev)
 	}
 	return r;
 }
-#endif
 
 static int nfc_parse_dt(struct device *dev, struct nqx_platform_data *pdata)
 {
@@ -1060,12 +1179,10 @@ static int nfc_parse_dt(struct device *dev, struct nqx_platform_data *pdata)
 		pdata->ese_gpio = -EINVAL;
 	}
 
-#ifdef CLK_SRC_PLL
 	if (of_property_read_string(np, "qcom,clk-src", &pdata->clk_src_name))
 		pdata->clk_pin_voting = false;
 	else
 		pdata->clk_pin_voting = true;
-#endif
 
 	pdata->clkreq_gpio = of_get_named_gpio(np, "qcom,nq-clkreq", 0);
 
@@ -1270,6 +1387,7 @@ static int nqx_probe(struct i2c_client *client,
 
 	/* init mutex and queues */
 	init_waitqueue_head(&nqx_dev->read_wq);
+	init_waitqueue_head(&nqx_dev->cold_reset_read_wq);
 	mutex_init(&nqx_dev->read_mutex);
 	mutex_init(&nqx_dev->dev_ref_mutex);
 	spin_lock_init(&nqx_dev->irq_enabled_lock);
@@ -1322,20 +1440,20 @@ static int nqx_probe(struct i2c_client *client,
 	}
 
 #ifdef NFC_KERNEL_BU
-#ifdef CLK_SRC_PLL
 	r = nqx_clock_select(nqx_dev);
 	if (r < 0) {
 		dev_err(&client->dev,
 			"%s: nqx_clock_select failed\n", __func__);
 		goto err_clock_en_failed;
 	}
-#endif
 	gpio_set_value(platform_data->en_gpio, 1);
 #endif
 	device_init_wakeup(&client->dev, true);
 	device_set_wakeup_capable(&client->dev, true);
 	i2c_set_clientdata(client, nqx_dev);
 	nqx_dev->irq_wake_up = false;
+	nqx_dev->cold_reset_rsp_pending = false;
+	nqx_dev->nfc_enabled = false;
 
 	dev_err(&client->dev,
 	"%s: probing NFCC NQxxx exited successfully\n",
