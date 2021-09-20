@@ -34,9 +34,7 @@
 *****************************************************************************/
 #include "focaltech_core.h"
 #ifdef CONFIG_DRM
-#include <linux/notifier.h>
-#include <linux/fb.h>
-#include <drm/drm_notifier.h>
+#include <linux/msm_drm_notify.h>
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 #include <linux/earlysuspend.h>
 #define FTS_SUSPEND_LEVEL 1	/* Early-suspend level */
@@ -1602,17 +1600,17 @@ static int fts_power_supply_event(struct notifier_block *nb, unsigned long event
 *****************************************************************************/
 static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
-	struct drm_notify_data *evdata = data;
+	struct msm_drm_notifier *evdata = data;
 	int *blank;
 	struct fts_ts_data *fts_data = container_of(self, struct fts_ts_data, fb_notif);
 
-	if (evdata && evdata->data && event == DRM_EVENT_BLANK && fts_data && fts_data->client) {
+	if (evdata && evdata->data && event == MSM_DRM_EVENT_BLANK && fts_data && fts_data->client) {
 		blank = evdata->data;
 		flush_workqueue(fts_data->event_wq);
 
-		if (*blank == DRM_BLANK_UNBLANK)
+		if (*blank == MSM_DRM_BLANK_UNBLANK)
 			queue_work(fts_data->event_wq, &fts_data->resume_work);
-		else if (*blank == DRM_BLANK_POWERDOWN)
+		else if (*blank == MSM_DRM_BLANK_POWERDOWN)
 			queue_work(fts_data->event_wq, &fts_data->suspend_work);
 	}
 
@@ -1911,7 +1909,7 @@ static int fts_ts_probe(struct i2c_client *client, const struct i2c_device_id *i
 
 #ifdef CONFIG_DRM
 	ts_data->fb_notif.notifier_call = fb_notifier_callback;
-	ret = drm_register_client(&ts_data->fb_notif);
+	ret = msm_drm_register_client(&ts_data->fb_notif);
 	if (ret) {
 		FTS_ERROR("[FB]Unable to register fb_notifier: %d", ret);
 	}
@@ -2003,7 +2001,7 @@ static int fts_ts_remove(struct i2c_client *client)
 #endif
 
 #ifdef CONFIG_DRM
-	if (drm_unregister_client(&ts_data->fb_notif))
+	if (msm_drm_unregister_client(&ts_data->fb_notif))
 		FTS_ERROR("Error occurred while unregistering fb_notifier.");
 #elif defined(CONFIG_HAS_EARLYSUSPEND)
 	unregister_early_suspend(&ts_data->early_suspend);
