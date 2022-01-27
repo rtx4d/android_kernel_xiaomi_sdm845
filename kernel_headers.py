@@ -1080,7 +1080,8 @@ def main():
         args.verbose, args.header_arch, args.gen_dir, args.arch_asm_kbuild,
         args.asm_generic_kbuild, module_dir, args.old_gen_headers_bp, args.new_gen_headers_bp,
         args.version_makefile, args.arch_syscall_tool, args.arch_syscall_tbl,
-        args.headers_install, args.unifdef, args.include_uapi, args.arch_include_uapi, techpack_include_uapi)
+        args.headers_install, args.unifdef, args.include_uapi, args.arch_include_uapi,
+        techpack_include_uapi)
 
   print('error: unknown mode: %s' % args.mode)
   return 1
