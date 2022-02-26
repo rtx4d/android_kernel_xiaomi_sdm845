@@ -1355,7 +1355,9 @@ static int fts_parse_dt(struct device *dev, struct fts_ts_platform_data *pdata)
 	return 0;
 }
 
-static ssize_t fts_lockdown_info_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t lockdown_info_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
 {
 	struct fts_ts_data *ts_data = dev_get_drvdata(dev);
 
@@ -1369,7 +1371,9 @@ static ssize_t fts_lockdown_info_show(struct device *dev, struct device_attribut
 			(int)ts_data->lockdown_info[7]);
 }
 
-static ssize_t fts_panel_color_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t panel_color_show(struct device *dev,
+				struct device_attribute *attr,
+				char *buf)
 {
 	struct fts_ts_data *ts_data = dev_get_drvdata(dev);
 
@@ -1379,7 +1383,9 @@ static ssize_t fts_panel_color_show(struct device *dev, struct device_attribute 
 	return snprintf(buf, PAGE_SIZE, "%c\n", ts_data->lockdown_info[2]);
 }
 
-static ssize_t fts_panel_vendor_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t panel_vendor_show(struct device *dev,
+				 struct device_attribute *attr,
+				 char *buf)
 {
 	struct fts_ts_data *ts_data = dev_get_drvdata(dev);
 
@@ -1389,7 +1395,9 @@ static ssize_t fts_panel_vendor_show(struct device *dev, struct device_attribute
 	return snprintf(buf, PAGE_SIZE, "%c\n", ts_data->lockdown_info[0]);
 }
 
-static ssize_t fts_panel_display_show(struct device *dev, struct device_attribute *attr, char *buf)
+static ssize_t panel_display_show(struct device *dev,
+				  struct device_attribute *attr,
+				  char *buf)
 {
 	struct fts_ts_data *ts_data = dev_get_drvdata(dev);
 
@@ -1399,10 +1407,10 @@ static ssize_t fts_panel_display_show(struct device *dev, struct device_attribut
 	return snprintf(buf, PAGE_SIZE, "%c\n", ts_data->lockdown_info[1]);
 }
 
-static DEVICE_ATTR(panel_vendor, 0644, fts_panel_vendor_show, NULL);
-static DEVICE_ATTR(panel_color, 0644, fts_panel_color_show, NULL);
-static DEVICE_ATTR(panel_display, 0644, fts_panel_display_show, NULL);
-static DEVICE_ATTR(lockdown_info, 0644, fts_lockdown_info_show, NULL);
+static DEVICE_ATTR_RO(panel_vendor);
+static DEVICE_ATTR_RO(panel_color);
+static DEVICE_ATTR_RO(panel_display);
+static DEVICE_ATTR_RO(lockdown_info);
 
 static struct attribute *fts_attrs[] = {
 	&dev_attr_lockdown_info.attr,
