@@ -204,12 +204,6 @@ struct fts_ts_data {
 	struct proc_dir_entry *tp_data_dump_proc;
 	struct proc_dir_entry *tp_fw_version_proc;
 	struct proc_dir_entry *tp_lockdown_info_proc;
-#ifdef CONFIG_TOUCHSCREEN_XIAOMI_TOUCHFEATURE
-	bool palm_sensor_switch;
-	bool palm_sensor_changed;
-	struct class *tp_class;
-	bool gamemode_enabled;
-#endif
 
 };
 

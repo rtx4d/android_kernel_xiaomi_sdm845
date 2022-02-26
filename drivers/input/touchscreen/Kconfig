@@ -15,7 +15,6 @@ source "drivers/input/touchscreen/fts/Kconfig"
 source "drivers/input/touchscreen/fts_521/Kconfig"
 source "drivers/input/touchscreen/nt36xxx/Kconfig"
 source "drivers/input/touchscreen/synaptics_dsx_2.6/Kconfig"
-source "drivers/input/touchscreen/xiaomi/Kconfig"
 
 config SECURE_TOUCH
 	bool "Secure Touch"
