@@ -34,6 +34,18 @@ ifeq ($(CONFIG_BUILD_ARM64_DT_OVERLAY),y)
 		perseus-p3-v2.1-overlay.dtbo \
 		perseus-mp-v2.1-overlay.dtbo
 
+	dtbo-$(CONFIG_MACH_XIAOMI_E30) += \
+		sdm845-shark-evt-overlay.dtbo \
+		sdm845-shark-preevt-overlay.dtbo \
+		sdm845-v2-shark-dvt-overlay.dtbo \
+		sdm845-v2-shark-dvt2-overlay.dtbo \
+		sdm845-v2-shark-evt-overlay.dtbo \
+		sdm845-v2-shark-preevt-overlay.dtbo \
+		sdm845-v2-shark-pvt-overlay.dtbo \
+		sdm845-v2.1-shark-dvt-overlay.dtbo \
+		sdm845-v2.1-shark-pvt-overlay.dtbo \
+		sdm845-v2.1-shark-pvt2-overlay.dtbo
+
 sdm845-mtp-overlay.dtbo-base := sdm845.dtb
 sdm845-v2-mtp-overlay.dtbo-base := sdm845-v2.dtb
 sdm845-v2.1-mtp-overlay.dtbo-base := sdm845-v2.1.dtb
@@ -66,6 +78,17 @@ perseus-p1_2-v2.1-overlay.dtbo-base := sdm845-v2.1.dtb
 perseus-p2-v2.1-overlay.dtbo-base := sdm845-v2.1.dtb
 perseus-p3-v2.1-overlay.dtbo-base := sdm845-v2.1.dtb
 perseus-mp-v2.1-overlay.dtbo-base := sdm845-v2.1.dtb
+
+sdm845-shark-evt-overlay.dtbo-base := sdm845.dtb
+sdm845-shark-preevt-overlay.dtbo-base := sdm845.dtb
+sdm845-v2-shark-dvt-overlay.dtbo-base := sdm845-v2.dtb
+sdm845-v2-shark-dvt2-overlay.dtbo-base := sdm845-v2.dtb
+sdm845-v2-shark-evt-overlay.dtbo-base := sdm845-v2.dtb
+sdm845-v2-shark-preevt-overlay.dtbo-base := sdm845-v2.dtb
+sdm845-v2-shark-pvt-overlay.dtbo-base := sdm845-v2.dtb
+sdm845-v2.1-shark-dvt-overlay.dtbo-base := sdm845-v2.1.dtb
+sdm845-v2.1-shark-pvt-overlay.dtbo-base := sdm845-v2.1.dtb
+sdm845-v2.1-shark-pvt2-overlay.dtbo-base := sdm845-v2.1.dtb
 else
 dtb-y += \
 	sdm845-sim.dtb \
@@ -144,6 +167,15 @@ dtb-$(CONFIG_MACH_XIAOMI_E5) += \
 	xiaomi/perseus/perseus-p2-v2.1.dtb \
 	xiaomi/perseus/perseus-p3-v2.1.dtb \
 	xiaomi/perseus/perseus-mp-v2.1.dtb
+
+dtb-$(CONFIG_MACH_XIAOMI_E30) += \
+	xiaomi/shark/sdm845-shark-evt.dtb \
+	xiaomi/shark/sdm845-shark-preevt.dtb \
+	xiaomi/shark/sdm845-shark-pvt.dtb \
+	xiaomi/shark/sdm845-v2-shark-dvt.dtb \
+	xiaomi/shark/sdm845-v2-shark-evt.dtb \
+	xiaomi/shark/sdm845-v2-shark-preevt.dtb \
+	xiaomi/shark/sdm845-v2.1-shark-dvt.dtb
 endif
 else
 dtb-$(CONFIG_ARCH_QCOM)	+= apq8016-sbc.dtb msm8916-mtp.dtb
